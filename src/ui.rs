@@ -43,13 +43,15 @@ fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         .map(|(i, entry)| {
             let file_name = entry.file_name().unwrap().to_string_lossy();
             let is_selected = app.selected_items.contains(entry);
-            let mut style = Style::default();
-            if i == app.selected_index {
-                style = style.fg(Color::White).bg(Color::Blue);
-            }
-            if is_selected {
-                style = style.bg(Color::Green);
-            }
+            let is_cursor = i == app.selected_index;
+
+            let style = match (is_selected, is_cursor) {
+                (true, true) => Style::default().fg(Color::Black).bg(Color::LightGreen),
+                (true, false) => Style::default().fg(Color::Black).bg(Color::Green),
+                (false, true) => Style::default().fg(Color::White).bg(Color::Blue),
+                (false, false) => Style::default(),
+            };
+
             let symbol = if entry.is_dir() { "[D]" } else { "   " };
             ListItem::new(Line::from(Span::styled(
                 format!("{} {}", symbol, file_name),
@@ -60,7 +62,7 @@ fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
 
     let items_list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("File List"))
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     frame.render_widget(items_list, main_chunks[0]);
 
