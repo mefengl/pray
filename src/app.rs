@@ -136,6 +136,10 @@ impl App {
         // Display success message in footer
         self.footer_message = Some("Copied to clipboard!".to_string());
         self.message_counter = 5; // Display for 5 cycles
+
+        // Reset selected items and all_selected flag
+        self.selected_items.clear();
+        self.all_selected = false;
     }
 
     // Decrement message counter
