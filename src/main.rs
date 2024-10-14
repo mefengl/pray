@@ -52,44 +52,100 @@ fn run_app(
         // Set a timeout for the event reading
         if crossterm::event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                match app.current_screen {
-                    app::CurrentScreen::Main => match key.code {
-                        KeyCode::Char('q') => {
-                            return Ok(());
+                if app.show_help {
+                    // Hide help screen on any key press
+                    app.show_help = false;
+                    continue;
+                }
+
+                match key.code {
+                    // Quit the application
+                    KeyCode::Char('q') => {
+                        return Ok(());
+                    }
+                    // Switch focus between panes using numbers
+                    KeyCode::Char('1') => {
+                        app.focused_pane = app::FocusedPane::FilesPane;
+                    }
+                    KeyCode::Char('2') => {
+                        app.focused_pane = app::FocusedPane::CollectionsPane;
+                    }
+                    KeyCode::Char('3') => {
+                        app.focused_pane = app::FocusedPane::SelectedFilesPane;
+                    }
+                    // Show help screen
+                    KeyCode::Char('?') => {
+                        app.show_help = true;
+                    }
+                    _ => {
+                        // Handle key events based on the focused pane
+                        match app.focused_pane {
+                            app::FocusedPane::FilesPane => match key.code {
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    if app.selected_file_index + 1 < app.directory_entries.len() {
+                                        app.selected_file_index += 1;
+                                    }
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    if app.selected_file_index > 0 {
+                                        app.selected_file_index -= 1;
+                                    }
+                                }
+                                KeyCode::Char('h') => {
+                                    app.go_back();
+                                }
+                                KeyCode::Char('l') | KeyCode::Enter => {
+                                    app.enter_directory();
+                                }
+                                KeyCode::Char(' ') => {
+                                    app.toggle_selection();
+                                }
+                                KeyCode::Char('a') => {
+                                    app.toggle_select_all();
+                                }
+                                KeyCode::Char('c') => {
+                                    app.copy_selected_items_to_clipboard();
+                                }
+                                _ => {}
+                            },
+                            app::FocusedPane::CollectionsPane => match key.code {
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    if app.selected_collection_index + 1 < app.collections.len() {
+                                        app.selected_collection_index += 1;
+                                    }
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    if app.selected_collection_index > 0 {
+                                        app.selected_collection_index -= 1;
+                                    }
+                                }
+                                KeyCode::Char('d') => {
+                                    app.remove_selected_collection();
+                                }
+                                KeyCode::Char('c') => {
+                                    app.copy_selected_collection_to_clipboard();
+                                }
+                                _ => {}
+                            },
+                            app::FocusedPane::SelectedFilesPane => match key.code {
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    if app.selected_file_in_collection_index + 1
+                                        < app.collections[app.selected_collection_index].files.len()
+                                    {
+                                        app.selected_file_in_collection_index += 1;
+                                    }
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    if app.selected_file_in_collection_index > 0 {
+                                        app.selected_file_in_collection_index -= 1;
+                                    }
+                                }
+                                KeyCode::Char('d') => {
+                                    app.unselect_file_from_collection();
+                                }
+                                _ => {}
+                            },
                         }
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            if app.selected_index + 1 < app.directory_entries.len() {
-                                app.selected_index += 1;
-                            }
-                        }
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            if app.selected_index > 0 {
-                                app.selected_index -= 1;
-                            }
-                        }
-                        KeyCode::Char('h') => {
-                            app.go_back();
-                        }
-                        KeyCode::Char('l') => {
-                            app.enter_directory();
-                        }
-                        KeyCode::Char(' ') => {
-                            app.toggle_selection();
-                        }
-                        KeyCode::Char('a') => {
-                            app.toggle_select_all();
-                        }
-                        KeyCode::Char('c') => {
-                            app.copy_selected_items_to_clipboard();
-                        }
-                        KeyCode::Char('?') => {
-                            app.current_screen = app::CurrentScreen::Help;
-                        }
-                        _ => {}
-                    },
-                    app::CurrentScreen::Help => {
-                        // Any key press returns to the main screen
-                        app.current_screen = app::CurrentScreen::Main;
                     }
                 }
             }

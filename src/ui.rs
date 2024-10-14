@@ -1,24 +1,23 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
 
-use crate::app::{App, CurrentScreen};
+use crate::app::{App, FocusedPane};
 
+// Main UI function to draw all panes at once
 pub fn ui(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    match app.current_screen {
-        CurrentScreen::Main => draw_main_screen(frame, app, size),
-        CurrentScreen::Help => draw_help_screen(frame, size),
+    if app.show_help {
+        draw_help_screen(frame, size);
+        return;
     }
-}
 
-fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
-    // Create layout
+    // Create the main layout with a vertical split for content and footer
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -27,15 +26,64 @@ fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         ])
         .split(size);
 
+    // Split the main content horizontally into files and collections panes
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(70), // Left: Directory list
-            Constraint::Percentage(30), // Right: Selected items
+            Constraint::Percentage(50), // Left: Files pane
+            Constraint::Percentage(50), // Right: Collections pane
         ])
         .split(chunks[0]);
 
-    // Left: Directory list
+    // Draw the files pane
+    draw_files_pane(frame, app, main_chunks[0]);
+    // Draw the collections pane
+    draw_collections_pane(frame, app, main_chunks[1]);
+
+    // Footer with basic commands or messages
+    let footer_text = if let Some(message) = &app.footer_message {
+        Span::styled(message, Style::default().fg(Color::Green))
+    } else {
+        match app.focused_pane {
+            FocusedPane::FilesPane => Span::raw(
+                "[j/k] Up/Down [h] Back [l/Enter] Enter \
+                 [Space] Select [a] All [c] Copy [q] Quit",
+            ),
+            FocusedPane::CollectionsPane => Span::raw("[j/k] Up/Down [d] Delete [c] Copy [q] Quit"),
+            FocusedPane::SelectedFilesPane => Span::raw("[j/k] Up/Down [d] Unselect [q] Quit"),
+        }
+    };
+
+    let footer = Paragraph::new(Line::from(footer_text))
+        .style(Style::default().fg(Color::White))
+        .block(Block::default());
+
+    frame.render_widget(footer, chunks[1]);
+}
+
+// Draw the files pane
+fn draw_files_pane(frame: &mut Frame, app: &App, area: Rect) {
+    // Determine the style based on focus
+    let is_focused = matches!(app.focused_pane, FocusedPane::FilesPane);
+
+    let border_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    // Create a block with title and border
+    let title = Line::from("[1] Files");
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style);
+
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Create list items for the directory entries
     let items: Vec<ListItem> = app
         .directory_entries
         .iter()
@@ -43,7 +91,7 @@ fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         .map(|(i, entry)| {
             let file_name = entry.file_name().unwrap().to_string_lossy();
             let is_selected = app.selected_items.contains(entry);
-            let is_cursor = i == app.selected_index;
+            let is_cursor = is_focused && i == app.selected_file_index;
 
             let style = match (is_selected, is_cursor) {
                 (true, true) => Style::default().fg(Color::Black).bg(Color::LightGreen),
@@ -60,58 +108,196 @@ fn draw_main_screen(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         })
         .collect();
 
-    let items_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("File List"))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+    let items_list =
+        List::new(items).highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    frame.render_widget(items_list, main_chunks[0]);
+    frame.render_widget(items_list, inner_area);
+}
 
-    // Right: Selected items list
-    let selected_items: Vec<ListItem> = app
-        .selected_items
+// Draw the collections pane
+fn draw_collections_pane(frame: &mut Frame, app: &App, area: Rect) {
+    // Split the collections pane vertically into list and details
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(50), // Top: Collection list
+            Constraint::Percentage(50), // Bottom: Selected files
+        ])
+        .split(area);
+
+    // Draw the collection list
+    draw_collection_list(frame, app, chunks[0]);
+    // Draw the selected files
+    draw_selected_files_pane(frame, app, chunks[1]);
+}
+
+// Draw the collection list
+fn draw_collection_list(frame: &mut Frame, app: &App, area: Rect) {
+    // Determine the style based on focus
+    let is_focused = matches!(app.focused_pane, FocusedPane::CollectionsPane);
+
+    let border_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    // Create a block with title and border
+    let title = Line::from("[2] Collections");
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style);
+
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Create list items for the collections
+    let items: Vec<ListItem> = app
+        .collections
         .iter()
-        .map(|entry| {
-            let display_path = entry.strip_prefix(&app.base_dir).unwrap_or(entry);
-            let file_name = display_path.to_string_lossy();
-            ListItem::new(Line::from(Span::raw(file_name)))
+        .enumerate()
+        .map(|(i, collection)| {
+            let is_cursor = is_focused && i == app.selected_collection_index;
+
+            let style = if is_cursor {
+                Style::default().fg(Color::White).bg(Color::Blue)
+            } else {
+                Style::default()
+            };
+
+            let item_text = format!(
+                "{} - {} files - {}",
+                collection.name,
+                collection.num_files,
+                collection.timestamp.format("%Y-%m-%d %H:%M:%S")
+            );
+
+            ListItem::new(Line::from(Span::styled(item_text, style)))
         })
         .collect();
 
-    let selected_list = List::new(selected_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Selected Items"),
-    );
+    let collections_list =
+        List::new(items).highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    frame.render_widget(selected_list, main_chunks[1]);
-
-    // Footer with basic commands
-    let footer_text = if let Some(message) = &app.footer_message {
-        Span::styled(message, Style::default().fg(Color::Green))
-    } else {
-        Span::raw("[h]Back [l]Enter [j/k]Up/Down [Space]Select [a]All [c]Copy [q]Quit [?]Help")
-    };
-
-    let footer = Paragraph::new(Line::from(footer_text))
-        .style(Style::default().fg(Color::White))
-        .block(Block::default());
-
-    frame.render_widget(footer, chunks[1]);
+    frame.render_widget(collections_list, inner_area);
 }
 
-fn draw_help_screen(frame: &mut Frame, size: ratatui::layout::Rect) {
+// Draw the selected files pane
+fn draw_selected_files_pane(frame: &mut Frame, app: &App, area: Rect) {
+    // Determine the style based on focus
+    let is_focused = matches!(app.focused_pane, FocusedPane::SelectedFilesPane);
+
+    let border_style = if is_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("[3] Selected Files")
+        .border_style(border_style);
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    let items: Vec<ListItem>;
+
+    match app.focused_pane {
+        FocusedPane::FilesPane => {
+            // Display selected items from the FilesPane
+            if app.selected_items.is_empty() {
+                // Display a message if there are no selected files
+                let text = Paragraph::new("No selected files").alignment(Alignment::Center);
+                frame.render_widget(text, inner_area);
+                return;
+            }
+
+            items = app
+                .selected_items
+                .iter()
+                .enumerate()
+                .map(|(i, entry)| {
+                    let display_path = entry.strip_prefix(&app.base_dir).unwrap_or(entry);
+                    let file_name = display_path.to_string_lossy();
+                    let is_cursor = is_focused && i == app.selected_file_in_collection_index;
+
+                    let style = if is_cursor {
+                        Style::default().fg(Color::White).bg(Color::Blue)
+                    } else {
+                        Style::default()
+                    };
+
+                    ListItem::new(Line::from(Span::styled(file_name, style)))
+                })
+                .collect();
+        }
+        FocusedPane::CollectionsPane | FocusedPane::SelectedFilesPane => {
+            // Display files from the selected collection
+            if app.collections.is_empty() {
+                // Display a message if there are no collections
+                let text = Paragraph::new("No collections").alignment(Alignment::Center);
+                frame.render_widget(text, inner_area);
+                return;
+            }
+
+            let collection = &app.collections[app.selected_collection_index];
+
+            if collection.files.is_empty() {
+                let text =
+                    Paragraph::new("No files in selected collection").alignment(Alignment::Center);
+                frame.render_widget(text, inner_area);
+                return;
+            }
+
+            items = collection
+                .files
+                .iter()
+                .enumerate()
+                .map(|(i, entry)| {
+                    let display_path = entry.strip_prefix(&app.base_dir).unwrap_or(entry);
+                    let file_name = display_path.to_string_lossy();
+                    let is_cursor = is_focused && i == app.selected_file_in_collection_index;
+
+                    let style = if is_cursor {
+                        Style::default().fg(Color::White).bg(Color::Blue)
+                    } else {
+                        Style::default()
+                    };
+
+                    ListItem::new(Line::from(Span::styled(file_name, style)))
+                })
+                .collect();
+        }
+    }
+
+    let files_list =
+        List::new(items).highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    frame.render_widget(files_list, inner_area);
+}
+
+// Draw the help screen
+fn draw_help_screen(frame: &mut Frame, size: Rect) {
+    use ratatui::widgets::Wrap;
+
     let help_text = vec![
         Line::from(Span::styled(
             "Help - Available Commands",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
+        Line::from(Span::raw("[1] Switch to Files Pane")),
+        Line::from(Span::raw("[2] Switch to Collections Pane")),
+        Line::from(Span::raw("[3] Switch to Selected Files Pane")),
         Line::from(Span::raw("[h] Go back to parent directory")),
-        Line::from(Span::raw("[l] Enter directory")),
+        Line::from(Span::raw("[l/Enter] Enter directory")),
         Line::from(Span::raw("[j/k] Move down/up")),
         Line::from(Span::raw("[Space] Select/Deselect item")),
         Line::from(Span::raw("[a] Select/Deselect all items")),
         Line::from(Span::raw("[c] Copy selected files' contents to clipboard")),
+        Line::from(Span::raw("[d] Delete selected collection or unselect file")),
         Line::from(Span::raw("[q] Quit the application")),
         Line::from(Span::raw("[?] Show this help screen")),
         Line::from(""),
@@ -120,7 +306,8 @@ fn draw_help_screen(frame: &mut Frame, size: ratatui::layout::Rect) {
 
     let help_paragraph = Paragraph::new(help_text)
         .block(Block::default().borders(Borders::ALL).title("Help"))
-        .alignment(ratatui::layout::Alignment::Left);
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
 
     frame.render_widget(help_paragraph, size);
 }

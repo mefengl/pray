@@ -1,21 +1,37 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-pub enum CurrentScreen {
-    Main,
-    Help,
+// Represents a collection of files
+#[derive(Serialize, Deserialize)]
+pub struct Collection {
+    pub name: String,
+    pub files: Vec<PathBuf>,
+    pub num_files: usize,
+    pub timestamp: chrono::DateTime<chrono::Local>,
 }
 
+// Enum representing which pane is currently focused
+pub enum FocusedPane {
+    FilesPane,
+    CollectionsPane,
+    SelectedFilesPane, // New variant
+}
+
+// The main application state
 pub struct App {
     // Current directory path
     pub current_dir: PathBuf,
     // List of directory entries in the current directory
     pub directory_entries: Vec<PathBuf>,
-    // Index of the selected item
-    pub selected_index: usize,
-    pub current_screen: CurrentScreen,
-    // Store selected items
+    // Index of the selected item in the files pane
+    pub selected_file_index: usize,
+    // Index of the selected collection
+    pub selected_collection_index: usize,
+    // Index of the selected file in the selected collection
+    pub selected_file_in_collection_index: usize, // New field
+    // Store selected items in the current directory
     pub selected_items: HashSet<PathBuf>,
     // Base directory for relative paths
     pub base_dir: PathBuf,
@@ -25,27 +41,58 @@ pub struct App {
     pub footer_message: Option<String>,
     // Counter to keep track of message display duration
     pub message_counter: u8,
-    // Flag for select all state
+    // Flag for select all state in files pane
     pub all_selected: bool,
+    // List of collections
+    pub collections: Vec<Collection>,
+    // Path to the collections file
+    pub collections_file: PathBuf,
+    // Focused pane
+    pub focused_pane: FocusedPane,
+    // Flag to show help screen
+    pub show_help: bool,
 }
 
 impl App {
+    // Create a new `App` instance.
     pub fn new() -> App {
         // Start at the current working directory
         let current_dir = std::env::current_dir().unwrap();
         let directory_entries = Self::read_directory(&current_dir);
 
+        // Get the path to the collections file
+        use directories::ProjectDirs;
+        let proj_dirs = ProjectDirs::from("com", "YourCompany", "YourAppName").unwrap();
+        let data_dir = proj_dirs.data_local_dir();
+        if !data_dir.exists() {
+            fs::create_dir_all(data_dir).unwrap();
+        }
+        let collections_file = data_dir.join("collections.json");
+
+        // Attempt to read the collections from the file
+        let collections = if collections_file.exists() {
+            let file = fs::File::open(&collections_file).unwrap();
+            serde_json::from_reader(file).unwrap_or_else(|_| vec![])
+        } else {
+            vec![]
+        };
+
         App {
             base_dir: current_dir.clone(),
             current_dir: current_dir.clone(),
             directory_entries,
-            selected_index: 0,
-            current_screen: CurrentScreen::Main,
+            selected_file_index: 0,
+            selected_collection_index: 0,
+            selected_file_in_collection_index: 0, // Initialize new field
             selected_items: HashSet::new(),
             navigation_stack: vec![],
             footer_message: None,
             message_counter: 0,
             all_selected: false,
+            collections,
+            collections_file,
+            focused_pane: FocusedPane::FilesPane,
+            show_help: false,
         }
     }
 
@@ -64,14 +111,14 @@ impl App {
         if self.directory_entries.is_empty() {
             return;
         }
-        let selected_path = &self.directory_entries[self.selected_index];
+        let selected_path = &self.directory_entries[self.selected_file_index];
         if selected_path.is_dir() {
             // Push current state onto the navigation stack
             self.navigation_stack
-                .push((self.current_dir.clone(), self.selected_index));
+                .push((self.current_dir.clone(), self.selected_file_index));
             self.current_dir = selected_path.clone();
             self.directory_entries = Self::read_directory(&self.current_dir);
-            self.selected_index = 0;
+            self.selected_file_index = 0;
         }
     }
 
@@ -80,13 +127,13 @@ impl App {
         if let Some((previous_dir, previous_index)) = self.navigation_stack.pop() {
             self.current_dir = previous_dir;
             self.directory_entries = Self::read_directory(&self.current_dir);
-            self.selected_index = previous_index;
+            self.selected_file_index = previous_index;
         }
     }
 
     // Toggle selection of the current item
     pub fn toggle_selection(&mut self) {
-        if let Some(selected_path) = self.directory_entries.get(self.selected_index) {
+        if let Some(selected_path) = self.directory_entries.get(self.selected_file_index) {
             if self.selected_items.contains(selected_path) {
                 self.selected_items.remove(selected_path);
             } else {
@@ -131,11 +178,24 @@ impl App {
 
         // Copy to clipboard
         let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        ctx.set_contents(output).unwrap();
+        ctx.set_contents(output.clone()).unwrap();
 
         // Display success message in footer
         self.footer_message = Some("Copied to clipboard!".to_string());
         self.message_counter = 5; // Display for 5 cycles
+
+        // Create new collection and add to collections
+        let collection_name = format!("Collection {}", self.collections.len() + 1);
+
+        let collection = Collection {
+            name: collection_name,
+            files: self.selected_items.iter().cloned().collect(),
+            num_files: self.selected_items.len(),
+            timestamp: chrono::Local::now(),
+        };
+
+        self.collections.push(collection);
+        self.save_collections();
 
         // Reset selected items and all_selected flag
         self.selected_items.clear();
@@ -150,5 +210,87 @@ impl App {
                 self.footer_message = None;
             }
         }
+    }
+
+    // Remove the selected collection
+    pub fn remove_selected_collection(&mut self) {
+        if self.collections.is_empty() {
+            return;
+        }
+
+        self.collections.remove(self.selected_collection_index);
+        if self.selected_collection_index >= self.collections.len()
+            && self.selected_collection_index > 0
+        {
+            self.selected_collection_index -= 1;
+        }
+        self.save_collections();
+    }
+
+    // Copy files from the selected collection to clipboard
+    pub fn copy_selected_collection_to_clipboard(&mut self) {
+        use clipboard::{ClipboardContext, ClipboardProvider};
+        use std::io::Read;
+
+        if self.collections.is_empty() {
+            return;
+        }
+
+        let collection = &self.collections[self.selected_collection_index];
+
+        let mut output = String::new();
+
+        for item in &collection.files {
+            if item.is_file() {
+                if let Ok(mut file) = fs::File::open(item) {
+                    let mut contents = String::new();
+                    if let Ok(_) = file.read_to_string(&mut contents) {
+                        let relative_path = item.strip_prefix(&self.base_dir).unwrap_or(item);
+                        output.push_str(&format!("------ {} ------\n", relative_path.display()));
+                        output.push_str("``````\n");
+                        output.push_str(&contents);
+                        output.push_str("\n``````\n");
+                    }
+                }
+            }
+        }
+
+        // Copy to clipboard
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        ctx.set_contents(output).unwrap();
+
+        // Display success message in footer
+        self.footer_message = Some("Collection copied to clipboard!".to_string());
+        self.message_counter = 5; // Display for 5 cycles
+    }
+
+    // Unselect a file from the selected collection
+    pub fn unselect_file_from_collection(&mut self) {
+        if self.collections.is_empty() {
+            return;
+        }
+        let collection = &mut self.collections[self.selected_collection_index];
+        if self.selected_file_in_collection_index < collection.files.len() {
+            collection
+                .files
+                .remove(self.selected_file_in_collection_index);
+            collection.num_files = collection.files.len();
+
+            // Adjust index if necessary
+            if self.selected_file_in_collection_index >= collection.files.len()
+                && self.selected_file_in_collection_index > 0
+            {
+                self.selected_file_in_collection_index -= 1;
+            }
+
+            // Move this outside the mutable borrow of collection
+            self.save_collections();
+        }
+    }
+
+    // Save collections to the collections file
+    fn save_collections(&self) {
+        let file = fs::File::create(&self.collections_file).unwrap();
+        serde_json::to_writer(file, &self.collections).unwrap();
     }
 }
