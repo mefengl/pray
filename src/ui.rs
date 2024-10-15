@@ -50,7 +50,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
                  [Space] Select [a] All [c] Copy [q] Quit",
             ),
             FocusedPane::CollectionsPane => Span::raw("[j/k] Up/Down [d] Delete [c] Copy [q] Quit"),
-            FocusedPane::SelectedFilesPane => Span::raw("[j/k] Up/Down [d] Unselect [q] Quit"),
+            FocusedPane::SelectedFilesPane => Span::raw("[j/k] Up/Down [Space] Unselect [q] Quit"),
         }
     };
 

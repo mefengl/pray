@@ -140,7 +140,7 @@ fn run_app(
                                         app.selected_file_in_collection_index -= 1;
                                     }
                                 }
-                                KeyCode::Char('d') => {
+                                KeyCode::Char(' ') => {
                                     app.unselect_file_from_collection();
                                 }
                                 _ => {}
