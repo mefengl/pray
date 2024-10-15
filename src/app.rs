@@ -1,3 +1,4 @@
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -16,7 +17,7 @@ pub struct Collection {
 pub enum FocusedPane {
     FilesPane,
     CollectionsPane,
-    SelectedFilesPane, // New variant
+    SelectedFilesPane,
 }
 
 // The main application state
@@ -30,7 +31,7 @@ pub struct App {
     // Index of the selected collection
     pub selected_collection_index: usize,
     // Index of the selected file in the selected collection
-    pub selected_file_in_collection_index: usize, // New field
+    pub selected_file_in_collection_index: usize,
     // Store selected items in the current directory
     pub selected_items: HashSet<PathBuf>,
     // Base directory for relative paths
@@ -51,6 +52,9 @@ pub struct App {
     pub focused_pane: FocusedPane,
     // Flag to show help screen
     pub show_help: bool,
+    // Renaming state
+    pub renaming_collection: bool,
+    pub new_collection_name: String,
 }
 
 impl App {
@@ -60,14 +64,14 @@ impl App {
         let current_dir = std::env::current_dir().unwrap();
         let directory_entries = Self::read_directory(&current_dir);
 
-        // Get the path to the collections file
-        use directories::ProjectDirs;
-        let proj_dirs = ProjectDirs::from("com", "YourCompany", "YourAppName").unwrap();
-        let data_dir = proj_dirs.data_local_dir();
-        if !data_dir.exists() {
-            fs::create_dir_all(data_dir).unwrap();
-        }
-        let collections_file = data_dir.join("collections.json");
+        // Set the base directory to the current directory
+        let base_dir = current_dir.clone();
+
+        // Set the path to the collections file in the data local directory
+        let project_dirs = ProjectDirs::from("", "", "pray").unwrap();
+        let data_local_dir = project_dirs.data_local_dir();
+        fs::create_dir_all(data_local_dir).unwrap();
+        let collections_file = data_local_dir.join("collections.json");
 
         // Attempt to read the collections from the file
         let collections = if collections_file.exists() {
@@ -78,12 +82,12 @@ impl App {
         };
 
         App {
-            base_dir: current_dir.clone(),
+            base_dir,
             current_dir: current_dir.clone(),
             directory_entries,
             selected_file_index: 0,
             selected_collection_index: 0,
-            selected_file_in_collection_index: 0, // Initialize new field
+            selected_file_in_collection_index: 0,
             selected_items: HashSet::new(),
             navigation_stack: vec![],
             footer_message: None,
@@ -93,6 +97,8 @@ impl App {
             collections_file,
             focused_pane: FocusedPane::FilesPane,
             show_help: false,
+            renaming_collection: false,
+            new_collection_name: String::new(),
         }
     }
 
@@ -292,5 +298,43 @@ impl App {
     fn save_collections(&self) {
         let file = fs::File::create(&self.collections_file).unwrap();
         serde_json::to_writer(file, &self.collections).unwrap();
+    }
+
+    // Start renaming a collection
+    pub fn start_rename(&mut self) {
+        if self.collections.is_empty() {
+            return;
+        }
+        self.renaming_collection = true;
+        self.new_collection_name = self.collections[self.selected_collection_index]
+            .name
+            .clone();
+    }
+
+    // Confirm the rename operation
+    pub fn confirm_rename(&mut self) {
+        if self.collections.is_empty() || !self.renaming_collection {
+            return;
+        }
+        self.collections[self.selected_collection_index].name = self.new_collection_name.clone();
+        self.save_collections();
+        self.renaming_collection = false;
+        self.new_collection_name.clear();
+
+        // Display success message
+        self.footer_message = Some("Collection renamed!".to_string());
+        self.message_counter = 5; // Display for 5 cycles
+    }
+
+    // Cancel the rename operation
+    pub fn cancel_rename(&mut self) {
+        if self.renaming_collection {
+            self.renaming_collection = false;
+            self.new_collection_name.clear();
+
+            // Display cancellation message
+            self.footer_message = Some("Rename canceled.".to_string());
+            self.message_counter = 5; // Display for 5 cycles
+        }
     }
 }

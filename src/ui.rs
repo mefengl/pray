@@ -2,9 +2,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
+
+use ratatui::layout::Position;
 
 use crate::app::{App, FocusedPane};
 
@@ -14,6 +16,11 @@ pub fn ui(frame: &mut Frame, app: &App) {
 
     if app.show_help {
         draw_help_screen(frame, size);
+        return;
+    }
+
+    if app.renaming_collection {
+        draw_rename_prompt(frame, app, size);
         return;
     }
 
@@ -49,7 +56,9 @@ pub fn ui(frame: &mut Frame, app: &App) {
                 "[j/k] Up/Down [h] Back [l/Enter] Enter \
                  [Space] Select [a] All [c] Copy [q] Quit",
             ),
-            FocusedPane::CollectionsPane => Span::raw("[j/k] Up/Down [d] Delete [c] Copy [q] Quit"),
+            FocusedPane::CollectionsPane => {
+                Span::raw("[j/k] Up/Down [d] Delete [c] Copy [r] Rename [q] Quit")
+            }
             FocusedPane::SelectedFilesPane => Span::raw("[j/k] Up/Down [Space] Unselect [q] Quit"),
         }
     };
@@ -214,12 +223,14 @@ fn draw_selected_files_pane(frame: &mut Frame, app: &App, area: Rect) {
                 return;
             }
 
+            let base_dir = &app.base_dir;
+
             items = app
                 .selected_items
                 .iter()
                 .enumerate()
                 .map(|(i, entry)| {
-                    let display_path = entry.strip_prefix(&app.base_dir).unwrap_or(entry);
+                    let display_path = entry.strip_prefix(base_dir).unwrap_or(entry);
                     let file_name = display_path.to_string_lossy();
                     let is_cursor = is_focused && i == app.selected_file_in_collection_index;
 
@@ -251,12 +262,14 @@ fn draw_selected_files_pane(frame: &mut Frame, app: &App, area: Rect) {
                 return;
             }
 
+            let base_dir = &app.base_dir;
+
             items = collection
                 .files
                 .iter()
                 .enumerate()
                 .map(|(i, entry)| {
-                    let display_path = entry.strip_prefix(&app.base_dir).unwrap_or(entry);
+                    let display_path = entry.strip_prefix(base_dir).unwrap_or(entry);
                     let file_name = display_path.to_string_lossy();
                     let is_cursor = is_focused && i == app.selected_file_in_collection_index;
 
@@ -298,6 +311,8 @@ fn draw_help_screen(frame: &mut Frame, size: Rect) {
         Line::from(Span::raw("[a] Select/Deselect all items")),
         Line::from(Span::raw("[c] Copy selected files' contents to clipboard")),
         Line::from(Span::raw("[d] Delete selected collection or unselect file")),
+        Line::from(Span::raw("[r] Rename selected collection")),
+        Line::from(Span::raw("[ESC] Cancel renaming")),
         Line::from(Span::raw("[q] Quit the application")),
         Line::from(Span::raw("[?] Show this help screen")),
         Line::from(""),
@@ -309,5 +324,70 @@ fn draw_help_screen(frame: &mut Frame, size: Rect) {
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
 
+    // Clear the background before rendering the popup
+    frame.render_widget(Clear, size);
     frame.render_widget(help_paragraph, size);
+}
+
+// Draw the rename prompt
+fn draw_rename_prompt(frame: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Rename Collection");
+
+    let input = Paragraph::new(app.new_collection_name.as_str())
+        .block(block.clone())
+        .style(Style::default().fg(Color::Yellow));
+
+    // Center the popup
+    let popup_area = centered_rect(60, 20, area);
+
+    // Clear the background before rendering the popup
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(input, popup_area);
+
+    // Add a hint below the input box
+    let hint = Paragraph::new("[Enter] Confirm, [Esc] Cancel")
+        .style(Style::default())
+        .alignment(Alignment::Center);
+
+    let hint_area = Rect {
+        x: popup_area.x,
+        y: popup_area.y + popup_area.height - 1,
+        width: popup_area.width,
+        height: 1,
+    };
+
+    frame.render_widget(hint, hint_area);
+
+    // Put cursor past the end of the input text
+    frame.set_cursor_position(Position::new(
+        popup_area.x + app.new_collection_name.len() as u16 + 1,
+        popup_area.y + 1,
+    ));
+}
+
+// Helper function to create a centered rectangle
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    let vertical_chunk = popup_layout[1];
+
+    let horizontal_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical_chunk);
+
+    horizontal_layout[1]
 }

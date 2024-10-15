@@ -58,6 +58,25 @@ fn run_app(
                     continue;
                 }
 
+                if app.renaming_collection {
+                    match key.code {
+                        KeyCode::Char(c) => {
+                            app.new_collection_name.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.new_collection_name.pop();
+                        }
+                        KeyCode::Enter => {
+                            app.confirm_rename();
+                        }
+                        KeyCode::Esc => {
+                            app.cancel_rename();
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 match key.code {
                     // Quit the application
                     KeyCode::Char('q') => {
@@ -112,11 +131,13 @@ fn run_app(
                                 KeyCode::Char('j') | KeyCode::Down => {
                                     if app.selected_collection_index + 1 < app.collections.len() {
                                         app.selected_collection_index += 1;
+                                        app.selected_file_in_collection_index = 0;
                                     }
                                 }
                                 KeyCode::Char('k') | KeyCode::Up => {
                                     if app.selected_collection_index > 0 {
                                         app.selected_collection_index -= 1;
+                                        app.selected_file_in_collection_index = 0;
                                     }
                                 }
                                 KeyCode::Char('d') => {
@@ -125,12 +146,20 @@ fn run_app(
                                 KeyCode::Char('c') => {
                                     app.copy_selected_collection_to_clipboard();
                                 }
+                                KeyCode::Char('r') => {
+                                    app.start_rename();
+                                }
                                 _ => {}
                             },
                             app::FocusedPane::SelectedFilesPane => match key.code {
                                 KeyCode::Char('j') | KeyCode::Down => {
+                                    if app.collections.is_empty() {
+                                        continue;
+                                    }
+                                    let collection =
+                                        &app.collections[app.selected_collection_index];
                                     if app.selected_file_in_collection_index + 1
-                                        < app.collections[app.selected_collection_index].files.len()
+                                        < collection.files.len()
                                     {
                                         app.selected_file_in_collection_index += 1;
                                     }
