@@ -312,6 +312,7 @@ fn draw_help_screen(frame: &mut Frame, size: Rect) {
         Line::from(Span::raw("[c] Copy selected files' contents to clipboard")),
         Line::from(Span::raw("[d] Delete selected collection or unselect file")),
         Line::from(Span::raw("[r] Rename selected collection")),
+        Line::from(Span::raw("[g] Toggle respecting .gitignore")),
         Line::from(Span::raw("[ESC] Cancel renaming")),
         Line::from(Span::raw("[q] Quit the application")),
         Line::from(Span::raw("[?] Show this help screen")),

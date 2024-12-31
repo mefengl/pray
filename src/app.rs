@@ -56,6 +56,7 @@ pub struct App {
     // Renaming state
     pub renaming_collection: bool,
     pub new_collection_name: String,
+    pub respect_gitignore: bool,
 }
 
 impl App {
@@ -63,7 +64,8 @@ impl App {
     pub fn new() -> App {
         // Start at the current working directory
         let current_dir = std::env::current_dir().unwrap();
-        let directory_entries = Self::read_directory(&current_dir);
+        let respect_gitignore = true; // default to true
+        let directory_entries = Self::read_directory(&current_dir, respect_gitignore);
 
         // Set the base directory to the current directory
         let base_dir = current_dir.clone();
@@ -100,14 +102,15 @@ impl App {
             show_help: false,
             renaming_collection: false,
             new_collection_name: String::new(),
+            respect_gitignore,
         }
     }
 
     // Read the directory entries
-    fn read_directory(path: &PathBuf) -> Vec<PathBuf> {
+    fn read_directory(path: &PathBuf, respect_gitignore: bool) -> Vec<PathBuf> {
         let walker = WalkBuilder::new(path)
             .hidden(false) // Show hidden files
-            .git_ignore(true) // Respect .gitignore files
+            .git_ignore(respect_gitignore) // Respect .gitignore files
             .max_depth(Some(1)) // Only read immediate directory contents
             .build();
 
@@ -131,7 +134,8 @@ impl App {
             self.navigation_stack
                 .push((self.current_dir.clone(), self.selected_file_index));
             self.current_dir = selected_path.clone();
-            self.directory_entries = Self::read_directory(&self.current_dir);
+            self.directory_entries =
+                Self::read_directory(&self.current_dir, self.respect_gitignore);
             self.selected_file_index = 0;
         }
     }
@@ -140,7 +144,8 @@ impl App {
     pub fn go_back(&mut self) {
         if let Some((previous_dir, previous_index)) = self.navigation_stack.pop() {
             self.current_dir = previous_dir;
-            self.directory_entries = Self::read_directory(&self.current_dir);
+            self.directory_entries =
+                Self::read_directory(&self.current_dir, self.respect_gitignore);
             self.selected_file_index = previous_index;
         }
     }
@@ -183,7 +188,7 @@ impl App {
     fn get_all_files_in_dir(&self, dir: &PathBuf) -> Vec<PathBuf> {
         WalkBuilder::new(dir)
             .hidden(false)
-            .git_ignore(true)
+            .git_ignore(self.respect_gitignore)
             .build()
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path().to_path_buf())
@@ -374,5 +379,21 @@ impl App {
             self.footer_message = Some("Rename canceled.".to_string());
             self.message_counter = 5; // Display for 5 cycles
         }
+    }
+
+    // Reload current directory
+    pub fn reload_current_directory(&mut self) {
+        self.directory_entries = Self::read_directory(&self.current_dir, self.respect_gitignore);
+    }
+
+    // Toggle method
+    pub fn toggle_gitignore(&mut self) {
+        self.respect_gitignore = !self.respect_gitignore;
+        self.reload_current_directory();
+        self.footer_message = Some(format!(
+            "Respect .gitignore: {}",
+            if self.respect_gitignore { "on" } else { "off" }
+        ));
+        self.message_counter = 5;
     }
 }

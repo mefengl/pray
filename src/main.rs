@@ -78,6 +78,9 @@ fn run_app(
                 }
 
                 match key.code {
+                    KeyCode::Char('g') => {
+                        app.toggle_gitignore();
+                    }
                     // Quit the application
                     KeyCode::Char('q') => {
                         return Ok(());
