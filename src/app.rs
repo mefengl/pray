@@ -172,24 +172,46 @@ impl App {
         self.all_selected = !current_all_selected;
     }
 
-    // Generate output and copy to clipboard
+    fn get_all_files_in_dir(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_file() {
+                    files.push(path);
+                } else if path.is_dir() {
+                    files.extend(self.get_all_files_in_dir(&path));
+                }
+            }
+        }
+        files
+    }
+
     pub fn copy_selected_items_to_clipboard(&mut self) {
         use clipboard::{ClipboardContext, ClipboardProvider};
         use std::io::Read;
 
         let mut output = String::new();
+        let mut all_files = Vec::new();
 
+        // Collect all files, including those in selected directories
         for item in &self.selected_items {
             if item.is_file() {
-                if let Ok(mut file) = fs::File::open(item) {
-                    let mut contents = String::new();
-                    if let Ok(_) = file.read_to_string(&mut contents) {
-                        let relative_path = item.strip_prefix(&self.base_dir).unwrap_or(item);
-                        output.push_str(&format!("------ {} ------\n", relative_path.display()));
-                        output.push_str("``````\n");
-                        output.push_str(&contents);
-                        output.push_str("\n``````\n");
-                    }
+                all_files.push(item.clone());
+            } else if item.is_dir() {
+                all_files.extend(self.get_all_files_in_dir(item));
+            }
+        }
+
+        for item in &all_files {
+            if let Ok(mut file) = fs::File::open(item) {
+                let mut contents = String::new();
+                if let Ok(_) = file.read_to_string(&mut contents) {
+                    let relative_path = item.strip_prefix(&self.base_dir).unwrap_or(item);
+                    output.push_str(&format!("------ {} ------\n", relative_path.display()));
+                    output.push_str("``````\n");
+                    output.push_str(&contents);
+                    output.push_str("\n``````\n");
                 }
             }
         }
@@ -207,8 +229,8 @@ impl App {
 
         let collection = Collection {
             name: collection_name,
-            files: self.selected_items.iter().cloned().collect(),
-            num_files: self.selected_items.len(),
+            files: all_files.clone(),
+            num_files: all_files.len(),
             timestamp: chrono::Local::now(),
         };
 
