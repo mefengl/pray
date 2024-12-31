@@ -148,16 +148,28 @@ impl App {
         }
     }
 
-    // Select or deselect all items
+    // Check if all items in current directory are selected
+    fn is_current_dir_all_selected(&self) -> bool {
+        self.directory_entries
+            .iter()
+            .all(|entry| self.selected_items.contains(entry))
+    }
+
+    // Select or deselect all items in current directory only
     pub fn toggle_select_all(&mut self) {
-        if self.all_selected {
-            self.selected_items.clear();
-            self.all_selected = false;
-        } else {
+        let current_all_selected = self.is_current_dir_all_selected();
+
+        // Remove only current directory items from selection
+        self.selected_items
+            .retain(|item| !self.directory_entries.contains(item));
+
+        if !current_all_selected {
+            // Add all current directory items to selection
             self.selected_items
                 .extend(self.directory_entries.iter().cloned());
-            self.all_selected = true;
         }
+
+        self.all_selected = !current_all_selected;
     }
 
     // Generate output and copy to clipboard
