@@ -1,4 +1,5 @@
 use directories::ProjectDirs;
+use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -104,9 +105,16 @@ impl App {
 
     // Read the directory entries
     fn read_directory(path: &PathBuf) -> Vec<PathBuf> {
-        let mut entries: Vec<PathBuf> = fs::read_dir(path)
-            .unwrap()
-            .filter_map(|res| res.ok().map(|e| e.path()))
+        let walker = WalkBuilder::new(path)
+            .hidden(false) // Show hidden files
+            .git_ignore(true) // Respect .gitignore files
+            .max_depth(Some(1)) // Only read immediate directory contents
+            .build();
+
+        let mut entries: Vec<PathBuf> = walker
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path().to_path_buf())
+            .filter(|p| p != path) // Exclude the directory itself
             .collect();
         entries.sort();
         entries
@@ -173,18 +181,14 @@ impl App {
     }
 
     fn get_all_files_in_dir(&self, dir: &PathBuf) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_file() {
-                    files.push(path);
-                } else if path.is_dir() {
-                    files.extend(self.get_all_files_in_dir(&path));
-                }
-            }
-        }
-        files
+        WalkBuilder::new(dir)
+            .hidden(false)
+            .git_ignore(true)
+            .build()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path().to_path_buf())
+            .filter(|path| path.is_file())
+            .collect()
     }
 
     pub fn copy_selected_items_to_clipboard(&mut self) {
