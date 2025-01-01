@@ -93,10 +93,13 @@ fn draw_files_pane(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     // Create list items for the directory entries
-    let items: Vec<ListItem> = app
+    let list_height = inner_area.height as usize;
+    let visible_entries: Vec<ListItem> = app
         .directory_entries
         .iter()
         .enumerate()
+        .skip(app.scroll_position)
+        .take(list_height)
         .map(|(i, entry)| {
             let file_name = entry.file_name().unwrap().to_string_lossy();
             let is_selected = app.selected_items.contains(entry);
@@ -118,7 +121,7 @@ fn draw_files_pane(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let items_list =
-        List::new(items).highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        List::new(visible_entries).highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     frame.render_widget(items_list, inner_area);
 }

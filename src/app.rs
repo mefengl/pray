@@ -57,6 +57,7 @@ pub struct App {
     pub renaming_collection: bool,
     pub new_collection_name: String,
     pub respect_gitignore: bool,
+    pub scroll_position: usize,
 }
 
 impl App {
@@ -103,6 +104,7 @@ impl App {
             renaming_collection: false,
             new_collection_name: String::new(),
             respect_gitignore,
+            scroll_position: 0,
         }
     }
 
@@ -395,5 +397,19 @@ impl App {
             if self.respect_gitignore { "on" } else { "off" }
         ));
         self.message_counter = 5;
+    }
+
+    pub fn update_scroll(&mut self, list_height: usize) {
+        let half_height = list_height.saturating_sub(1) / 2;
+        let list_len = self.directory_entries.len();
+
+        // Keep selection in the middle of the screen when possible
+        if list_len > list_height {
+            let ideal_scroll = self.selected_file_index.saturating_sub(half_height);
+            let max_scroll = list_len.saturating_sub(list_height);
+            self.scroll_position = ideal_scroll.min(max_scroll);
+        } else {
+            self.scroll_position = 0;
+        }
     }
 }
