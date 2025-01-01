@@ -47,7 +47,15 @@ fn run_app(
     app: &mut App,
 ) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, app))?;
+        terminal.draw(|f| {
+            ui(f, app);
+
+            // Update scroll after rendering to get correct dimensions
+            if let app::FocusedPane::FilesPane = app.focused_pane {
+                let height = f.area().height.saturating_sub(3) as usize; // Subtract borders and footer
+                app.update_scroll(height);
+            }
+        })?;
 
         // Set a timeout for the event reading
         if crossterm::event::poll(Duration::from_millis(200))? {
