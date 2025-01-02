@@ -82,11 +82,9 @@ fn draw_files_pane(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Create a block with title and border
-    let title = Line::from("[1] Files");
-
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(title)
+        .title("[1] Files")
         .border_style(border_style);
 
     let inner_area = block.inner(area);
@@ -155,11 +153,9 @@ fn draw_collection_list(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Create a block with title and border
-    let title = Line::from("[2] Collections");
-
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(title)
+        .title("[2] Collections")
         .border_style(border_style);
 
     let inner_area = block.inner(area);
